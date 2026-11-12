@@ -10,10 +10,24 @@
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_DIR="${PDX_RUNTIME:-$HOME/.local/share/pdx-controller-wine/runtime}"
+if [ -x "/usr/local/lib/pdx-controller-wine/fetch-pdx.sh" ]; then
+    FETCH_SCRIPT="/usr/local/lib/pdx-controller-wine/fetch-pdx.sh"
+else
+    FETCH_SCRIPT="$PROJECT_DIR/bin/fetch-pdx.sh"
+fi
+# Runtime priority: env override > /opt system install > per-user
+if [ -n "${PDX_RUNTIME:-}" ]; then
+    RUNTIME_DIR="$PDX_RUNTIME"
+elif [ -x "/opt/pdx-controller-wine/runtime/bin/wine" ]; then
+    RUNTIME_DIR="/opt/pdx-controller-wine/runtime"
+else
+    RUNTIME_DIR="$HOME/.local/share/pdx-controller-wine/runtime"
+fi
 PREFIX_DIR="${PDX_PREFIX:-$HOME/.local/share/pdx-controller-wine/prefix}"
 PDX_EXE="$PREFIX_DIR/drive_c/Program Files/PDX Controller v1.2/PDX Controller.exe"
-DEFAULT_INSTALLER="$HOME/Transferências/PDX Controller v1.2/PDX Controller.exe"
+CACHE_DIR="$HOME/.local/share/pdx-controller-wine/cache"
+CACHE_INSTALLER="$CACHE_DIR/PDX Controller.exe"
+USER_INSTALLER="$HOME/Transferências/PDX Controller v1.2/PDX Controller.exe"
 
 log() { printf '\033[1;36m[pdx]\033[0m %s\n' "$*"; }
 ok()  { printf '  \033[1;32mok\033[0m    %s\n' "$*"; }
@@ -136,15 +150,21 @@ ensure_prefix() {
 
 install_pdx() {
     local src="${1:-}"
+    local from_cache=0
     if [ -z "$src" ]; then
-        src="$DEFAULT_INSTALLER"
-        if [ ! -f "$src" ]; then
-            log "Installer not found locally — downloading..."
-            if ! "$PROJECT_DIR/bin/fetch-pdx.sh"; then
+        if [ -f "$USER_INSTALLER" ]; then
+            src="$USER_INSTALLER"
+        elif [ -f "$CACHE_INSTALLER" ]; then
+            src="$CACHE_INSTALLER"
+            from_cache=1
+        else
+            log "Installer not found — downloading to $CACHE_DIR..."
+            if ! "$FETCH_SCRIPT"; then
                 fail "Download failed. See messages above."
                 return 1
             fi
-            src="$DEFAULT_INSTALLER"
+            src="$CACHE_INSTALLER"
+            from_cache=1
         fi
     fi
     if [ ! -f "$src" ]; then
@@ -166,6 +186,22 @@ install_pdx() {
         done
     fi
     ok "PDX Controller installed at: $PDX_EXE"
+
+    if [ "$from_cache" = "1" ] && [ -f "$src" ]; then
+        if [ "${NO_CONFIRM:-0}" = "1" ] || [ ! -t 0 ]; then
+            log "(non-interactive — cache kept at $CACHE_DIR)"
+        else
+            local size
+            size=$(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1)
+            read -r -p "Delete cached installer ($size)? [y/N] " reply
+            case "$reply" in
+                [yY]|[yY][eE][sS])
+                    rm -rf "$CACHE_DIR"
+                    ok "Cache deleted."
+                    ;;
+            esac
+        fi
+    fi
 }
 
 run_pdx() {

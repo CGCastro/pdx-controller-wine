@@ -12,6 +12,8 @@ WINE_TARBALL="wine-${WINE_VERSION}.tar.xz"
 WINE_URL="https://dl.winehq.org/wine/source/11.x/${WINE_TARBALL}"
 BASE_RUNTIME="${BASE_RUNTIME:-/usr/lib/rekordbox-wine/wine}"
 NO_CONFIRM="${NO_CONFIRM:-0}"
+CLEANUP_PKGS_FILE="$BUILD_DIR/.pkgs-installed"
+NO_CLEANUP="${NO_CLEANUP:-0}"
 
 log()  { printf '\033[1;36m[build]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -83,6 +85,9 @@ if [ ${#missing_cmds[@]} -gt 0 ]; then
             inst_mb=$(LC_ALL=C awk -v k="$install_kb" 'BEGIN {printf "%.1f", k/1024}')
             warn "Install size: ${inst_mb} MB"
         fi
+        mkdir -p "$BUILD_DIR"
+        printf '%s\n' $pkg_names >> "$CLEANUP_PKGS_FILE"
+        sort -u -o "$CLEANUP_PKGS_FILE" "$CLEANUP_PKGS_FILE"
     fi
 
     if [ "$NO_CONFIRM" = "1" ] || [ ! -t 0 ]; then
@@ -165,3 +170,37 @@ fi
 
 log "Runtime ready: $RUNTIME_DIR"
 log "To launch: $PROJECT_DIR/bin/pdx-controller-wine"
+
+# --- 6. Offer to remove packages installed by this script ---
+if [ -f "$CLEANUP_PKGS_FILE" ] && [ "$NO_CLEANUP" != "1" ]; then
+    installed_pkgs=$(cat "$CLEANUP_PKGS_FILE")
+    if [ -n "$installed_pkgs" ]; then
+        echo ""
+        warn "Packages installed by this script (not previously present):"
+        printf '  %s\n' $installed_pkgs
+        total_kb=$(dpkg-query -Wf '${Installed-Size}\n' $installed_pkgs 2>/dev/null | awk '{s+=$1} END {print s+0}')
+        total_mb=$(awk -v k="$total_kb" 'BEGIN {printf "%.1f", k/1024}')
+        warn "Total: ${total_mb} MB. None of these are needed to run PDX Controller."
+        if [ "$NO_CONFIRM" = "1" ] || [ ! -t 0 ]; then
+            log "Non-interactive; keeping packages."
+            log "Remove later with: sudo apt purge --no-install-recommends $installed_pkgs"
+        else
+            read -r -p "Remove them? [y/N] " reply
+            case "$reply" in
+                [yY]|[yY][eE][sS])
+                    log "Removing ${total_mb} MB of packages..."
+                    if sudo apt purge -y --no-install-recommends $installed_pkgs > /tmp/pdx-cleanup.log 2>&1; then
+                        log "OK — packages removed."
+                        rm -f /tmp/pdx-cleanup.log "$CLEANUP_PKGS_FILE"
+                    else
+                        warn "Some packages could not be removed. Last 10 lines:"
+                        tail -10 /tmp/pdx-cleanup.log
+                    fi
+                    ;;
+                *)
+                    log "Kept. Remove later with: sudo apt purge --no-install-recommends $installed_pkgs"
+                    ;;
+            esac
+        fi
+    fi
+fi

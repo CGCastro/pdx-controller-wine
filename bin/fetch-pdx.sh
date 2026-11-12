@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-DEST="${1:-$HOME/Transferências/PDX Controller v1.2}"
+DEST="${1:-$HOME/.local/share/pdx-controller-wine/cache}"
 URL="https://cdn-media.empowertribe.com/8e80fcd368e84d29a992ec7508091a44/PDX%20Controller%20v1.2.zip"
 ZIP="/tmp/PDX-Controller-v1.2.zip"
 FALLBACK_URL="https://www.labgruppen.com/en/products/0106-AAN?tab=downloads"
@@ -49,7 +49,14 @@ log "Extracting to $DEST ..."
 unzip -o -q "$ZIP" -d "$DEST"
 rm -f "$ZIP"
 
-# 3. Locate the .exe
+# 3. Flatten: if the ZIP created a nested "PDX Controller v1.2" subdir, move its contents up
+if [ -d "$DEST/PDX Controller v1.2" ] && [ ! -f "$DEST/PDX Controller.exe" ]; then
+    log "Flattening nested extraction..."
+    mv "$DEST/PDX Controller v1.2"/* "$DEST/" 2>/dev/null || true
+    rmdir "$DEST/PDX Controller v1.2" 2>/dev/null || true
+fi
+
+# 4. Locate the .exe
 EXE=$(find "$DEST" -maxdepth 2 -iname 'PDX Controller.exe' -print -quit)
 if [ -z "$EXE" ]; then
     die "PDX Controller.exe not found after extraction. Contents:"
@@ -57,3 +64,4 @@ if [ -z "$EXE" ]; then
 fi
 
 log "OK — installer at: $EXE"
+log "Cached in $DEST (removable after 'pdx-controller-wine --install')"
