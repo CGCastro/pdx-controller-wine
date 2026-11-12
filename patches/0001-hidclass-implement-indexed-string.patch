@@ -1,0 +1,72 @@
+diff --git a/dlls/hidclass.sys/device.c b/dlls/hidclass.sys/device.c
+index 4a28ec0..aed1fff 100644
+--- a/dlls/hidclass.sys/device.c
++++ b/dlls/hidclass.sys/device.c
+@@ -602,6 +602,67 @@ NTSTATUS WINAPI pdo_ioctl( DEVICE_OBJECT *device, IRP *irp )
+             status = irp->IoStatus.Status;
+             break;
+         }
++        case IOCTL_HID_GET_INDEXED_STRING:  /* RBW-INDEXED */
++        {
++            WCHAR *output_buf = MmGetSystemAddressForMdlSafe( irp->MdlAddress, NormalPagePriority );
++            ULONG output_len = irpsp->Parameters.DeviceIoControl.OutputBufferLength;
++            if (irpsp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(ULONG))
++                index = *(ULONG *)irp->AssociatedIrp.SystemBuffer;
++            else
++                index = 0;
++
++            TRACE( "IOCTL_HID_GET_INDEXED_STRING[%08x] output_len=%u\n", index, output_len );
++
++            /* Windows hidclass.sys maps HID indexed strings as:
++             *   0 = language ID (0x0409 for en-US)
++             *   1 = manufacturer
++             *   2 = product
++             *   3 = serial number
++             *   4 = vendor-specific (PDX3000 returns "AP")
++             *   5+ = not present (error)
++             * The winebus.sys index constants (HID_STRING_ID_IMANUFACTURER=0,
++             * HID_STRING_ID_IPRODUCT=1, HID_STRING_ID_ISERIALNUMBER=2) are the
++             * *descriptor* indices, not the IOCTL indices. Shift by 1 here.
++             */
++            {
++                static const WCHAR lang[] = { 0x0409, 0 };  /* en-US */
++                static const WCHAR vendor_str[] = L"AP";
++                const WCHAR *out = NULL;
++
++                switch (index)
++                {
++                case 0: out = lang; break;
++                case 1: out = find_device_string( pdo->base.device_id, HID_STRING_ID_IMANUFACTURER ); break;
++                case 2: out = find_device_string( pdo->base.device_id, HID_STRING_ID_IPRODUCT ); break;
++                case 3: out = find_device_string( pdo->base.device_id, HID_STRING_ID_ISERIALNUMBER ); break;
++                case 4: out = vendor_str; break;
++                default:
++                    irp->IoStatus.Status = STATUS_OBJECT_NAME_NOT_FOUND;
++                    status = STATUS_OBJECT_NAME_NOT_FOUND;
++                    break;
++                }
++
++                if (status == STATUS_OBJECT_NAME_NOT_FOUND) break;
++
++                if (!out)
++                {
++                    status = STATUS_OBJECT_NAME_NOT_FOUND;
++                    break;
++                }
++
++                {
++                    ULONG needed = (wcslen( out ) + 1) * sizeof(WCHAR);
++                    irp->IoStatus.Information = needed;
++                    if (needed > output_len) status = STATUS_BUFFER_TOO_SMALL;
++                    else
++                    {
++                        memcpy( output_buf, out, needed );
++                        status = STATUS_SUCCESS;
++                    }
++                }
++                break;
++            }
++        }
+         case IOCTL_HID_GET_COLLECTION_INFORMATION:
+         {
+             irp->IoStatus.Information = sizeof(HID_COLLECTION_INFORMATION);

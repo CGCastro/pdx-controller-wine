@@ -1,0 +1,13 @@
+# Build artifacts
+build/
+runtime/
+
+# Generated output
+*.o
+*.so
+*.a
+
+# Editor and OS
+*.swp
+*~
+.DS_Store

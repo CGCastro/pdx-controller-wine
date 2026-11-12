@@ -1,0 +1,157 @@
+#!/bin/bash
+# pdx-controller-wine — launcher for PDX Controller v1.2 under Wine
+#
+# Usage:
+#   pdx-controller-wine                       launch PDX Controller
+#   pdx-controller-wine --check               report state, change nothing
+#   pdx-controller-wine --install             download + install to prefix
+#   pdx-controller-wine --install <path.exe>  install an explicit executable
+
+set -uo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNTIME_DIR="$HOME/.local/share/pdx-controller-wine/runtime"
+PREFIX_DIR="$HOME/.local/share/pdx-controller-wine/prefix"
+PDX_EXE="$PREFIX_DIR/drive_c/Program Files/PDX Controller v1.2/PDX Controller.exe"
+DEFAULT_INSTALLER="$HOME/Transferências/PDX Controller v1.2/PDX Controller.exe"
+
+log() { printf '\033[1;36m[pdx]\033[0m %s\n' "$*"; }
+ok()  { printf '  \033[1;32mok\033[0m    %s\n' "$*"; }
+warn(){ printf '  \033[1;33mwarn\033[0m  %s\n' "$*"; }
+fail(){ printf '  \033[1;31mFAIL\033[0m  %s\n' "$*"; }
+
+check_runtime() {
+    local status=0
+    if [ ! -x "$RUNTIME_DIR/bin/wine" ]; then
+        fail "runtime missing: $RUNTIME_DIR/bin/wine"
+        echo "         run: $PROJECT_DIR/bin/build-runtime.sh"
+        status=1
+    else
+        ok "wine: $RUNTIME_DIR/bin/wine"
+    fi
+    if [ ! -x "$RUNTIME_DIR/bin/wineserver" ]; then
+        fail "wineserver missing at $RUNTIME_DIR/bin/"
+        status=1
+    else
+        ok "wineserver: $RUNTIME_DIR/bin/wineserver"
+    fi
+    if [ -f "$RUNTIME_DIR/lib/wine/x86_64-windows/hidclass.sys" ]; then
+        if strings "$RUNTIME_DIR/lib/wine/x86_64-windows/hidclass.sys" > /tmp/pdx-check.txt 2>/dev/null && \
+           grep -q "IOCTL_HID_GET_INDEXED_STRING" /tmp/pdx-check.txt; then
+            ok "hidclass.sys: patched (IOCTL_HID_GET_INDEXED_STRING present)"
+        else
+            fail "hidclass.sys: NOT patched"
+            status=1
+        fi
+        rm -f /tmp/pdx-check.txt
+    else
+        fail "hidclass.sys missing at $RUNTIME_DIR/lib/wine/x86_64-windows/"
+        status=1
+    fi
+    return $status
+}
+
+check_prefix() {
+    if [ -d "$PREFIX_DIR/drive_c" ]; then
+        ok "prefix: $PREFIX_DIR"
+    else
+        warn "prefix does not exist (will be created on first --run)"
+    fi
+    if [ -f "$PDX_EXE" ]; then
+        ok "PDX Controller: installed ($PDX_EXE)"
+    else
+        warn "PDX Controller: NOT installed (run --install)"
+    fi
+}
+
+ensure_prefix() {
+    if [ -d "$PREFIX_DIR/drive_c" ]; then
+        return 0
+    fi
+    log "Creating prefix at $PREFIX_DIR (first run, ~1 min)..."
+    WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wineboot" -i >/dev/null 2>&1
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Software\\Wine" /v HideWineExports /t REG_SZ /d Y /f >/dev/null 2>&1
+    log "Prefix created."
+}
+
+install_pdx() {
+    local src="${1:-}"
+    if [ -z "$src" ]; then
+        src="$DEFAULT_INSTALLER"
+        if [ ! -f "$src" ]; then
+            log "Installer not found locally — downloading..."
+            if ! "$PROJECT_DIR/bin/fetch-pdx.sh"; then
+                fail "Download failed. See messages above."
+                return 1
+            fi
+            src="$DEFAULT_INSTALLER"
+        fi
+    fi
+    if [ ! -f "$src" ]; then
+        fail "installer not found: $src"
+        echo "         usage: $0 --install /path/to/PDX\\ Controller.exe"
+        return 1
+    fi
+    ensure_prefix
+    local dest_dir="$PREFIX_DIR/drive_c/Program Files/PDX Controller v1.2"
+    mkdir -p "$dest_dir"
+    log "Copying $src -> $dest_dir/"
+    cp -a "$src" "$dest_dir/"
+    local src_dir
+    src_dir="$(dirname "$src")"
+    if [ -d "$src_dir" ]; then
+        for f in "$src_dir"/*.dll "$src_dir"/*.ini "$src_dir"/*.cfg "$src_dir"/*.dat; do
+            [ -f "$f" ] || continue
+            cp -a "$f" "$dest_dir/"
+        done
+    fi
+    ok "PDX Controller installed at: $PDX_EXE"
+}
+
+run_pdx() {
+    ensure_prefix
+    if [ ! -f "$PDX_EXE" ]; then
+        fail "PDX Controller not installed. Run: $0 --install"
+        return 1
+    fi
+    log "Launching PDX Controller..."
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wine" "$PDX_EXE" >/tmp/pdx-run.log 2>&1 &
+    local pid=$!
+    sleep 3
+    if kill -0 "$pid" 2>/dev/null; then
+        ok "PDX Controller running (PID $pid)"
+        ok "Log: /tmp/pdx-run.log"
+    else
+        fail "PDX Controller exited immediately. Log:"
+        tail -20 /tmp/pdx-run.log
+        return 1
+    fi
+}
+
+case "${1:-}" in
+    --check)
+        log "Runtime check:"
+        check_runtime || true
+        echo ""
+        log "Prefix check:"
+        check_prefix || true
+        ;;
+    --install)
+        shift
+        install_pdx "${1:-}"
+        ;;
+    ""|--run)
+        run_pdx
+        ;;
+    --help|-h)
+        echo "Usage: $0 [--check|--install [path]|--run]"
+        ;;
+    *)
+        echo "Unknown option: $1" >&2
+        echo "Usage: $0 [--check|--install [path]|--run]" >&2
+        exit 1
+        ;;
+esac
