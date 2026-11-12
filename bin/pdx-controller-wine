@@ -10,8 +10,8 @@
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_DIR="$HOME/.local/share/pdx-controller-wine/runtime"
-PREFIX_DIR="$HOME/.local/share/pdx-controller-wine/prefix"
+RUNTIME_DIR="${PDX_RUNTIME:-$HOME/.local/share/pdx-controller-wine/runtime}"
+PREFIX_DIR="${PDX_PREFIX:-$HOME/.local/share/pdx-controller-wine/prefix}"
 PDX_EXE="$PREFIX_DIR/drive_c/Program Files/PDX Controller v1.2/PDX Controller.exe"
 DEFAULT_INSTALLER="$HOME/Transferências/PDX Controller v1.2/PDX Controller.exe"
 
@@ -62,17 +62,75 @@ check_prefix() {
     else
         warn "PDX Controller: NOT installed (run --install)"
     fi
+    if [ -d "$PREFIX_DIR/drive_c" ]; then
+        local dpi
+        dpi=$(WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all "$RUNTIME_DIR/bin/wine" \
+            reg query "HKCU\\Control Panel\\Desktop" /v LogPixels 2>/dev/null | \
+            tr -d '\r' | \
+            awk '/LogPixels/ {print $3; exit}')
+        case "$dpi" in
+            0xc0) ok "DPI: 192 (2x)" ;;
+            0x90) ok "DPI: 144 (1.5x)" ;;
+            0x78) ok "DPI: 120 (1.25x)" ;;
+            0x60) ok "DPI: 96 (1x)" ;;
+            "")   warn "DPI: not set (default 96; use PDX_DPI=192 for HiDPI)" ;;
+            *)    warn "DPI: ${dpi} (custom)" ;;
+        esac
+        local fonts
+        fonts=$(WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all "$RUNTIME_DIR/bin/wine" \
+            reg query "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" 2>/dev/null | \
+            grep -icE 'arial|times|verdana|georgia|trebuchet')
+        if [ "${fonts:-0}" -ge 5 ]; then
+            ok "corefonts: registered ($fonts entries)"
+        else
+            warn "corefonts: not registered (run --install to fix)"
+        fi
+    fi
+}
+
+set_win10() {
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wine" reg add "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion" \
+        /v CurrentVersion /t REG_SZ /d "10.0" /f >/dev/null 2>&1
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wine" reg add "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion" \
+        /v CurrentBuild /t REG_SZ /d "19045" /f >/dev/null 2>&1
+}
+
+install_corefonts() {
+    if ! command -v winetricks >/dev/null 2>&1; then
+        warn "winetricks not installed — fonts will not be registered."
+        warn "Install with: sudo apt install --no-install-recommends winetricks"
+        return 0
+    fi
+    log "Installing corefonts (fixes tofu glyphs)..."
+    PATH="$RUNTIME_DIR/bin:$PATH" WINE="$RUNTIME_DIR/bin/wine" \
+        WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        winetricks -q corefonts >/dev/null 2>&1 || true
+    # winetricks may revert to Win7; reapply
+    set_win10
+}
+
+set_dpi() {
+    local dpi="${PDX_DPI:-192}"
+    log "Setting DPI=${dpi} (override with PDX_DPI=<value>)..."
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Control Panel\\Desktop" \
+        /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null 2>&1
 }
 
 ensure_prefix() {
     if [ -d "$PREFIX_DIR/drive_c" ]; then
         return 0
     fi
-    log "Creating prefix at $PREFIX_DIR (first run, ~1 min)..."
+    log "Creating prefix at $PREFIX_DIR (first run, 2-3 min)..."
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wineboot" -i >/dev/null 2>&1
     WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Software\\Wine" /v HideWineExports /t REG_SZ /d Y /f >/dev/null 2>&1
+    set_win10
+    install_corefonts
+    set_dpi
     log "Prefix created."
 }
 
@@ -112,6 +170,9 @@ install_pdx() {
 
 run_pdx() {
     ensure_prefix
+    if [ -n "${PDX_DPI:-}" ]; then
+        set_dpi  # re-apply if PDX_DPI explicitly set
+    fi
     if [ ! -f "$PDX_EXE" ]; then
         fail "PDX Controller not installed. Run: $0 --install"
         return 1
@@ -147,11 +208,29 @@ case "${1:-}" in
         run_pdx
         ;;
     --help|-h)
-        echo "Usage: $0 [--check|--install [path]|--run]"
+        cat <<'USAGE'
+Usage: pdx-controller-wine [OPTION]
+
+Options:
+  --check               Report state, change nothing
+  --install [path]      Download (or use path) and install to prefix
+  --run                 Launch PDX Controller (default)
+  --help                Show this help
+
+Environment:
+  PDX_DPI=<value>       DPI override (default 192; 96=1x, 144=1.5x)
+  PDX_RUNTIME=<path>    Override runtime directory
+  PDX_PREFIX=<path>     Override Wine prefix
+
+Examples:
+  PDX_DPI=144 pdx-controller-wine                # run at 1.5x
+  PDX_DPI=144 pdx-controller-wine --install     # create prefix at 1.5x
+  PDX_PREFIX=/tmp/test pdx-controller-wine       # throwaway prefix
+USAGE
         ;;
     *)
         echo "Unknown option: $1" >&2
-        echo "Usage: $0 [--check|--install [path]|--run]" >&2
+        echo "Usage: $0 [--check|--install [path]|--run] (try --help)" >&2
         exit 1
         ;;
 esac
