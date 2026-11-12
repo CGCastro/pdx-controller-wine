@@ -94,7 +94,16 @@ if [ ${#missing_cmds[@]} -gt 0 ]; then
             *) die "Aborted. Install with: sudo apt install --no-install-recommends ${missing_pkgs[*]}" ;;
         esac
     fi
-    sudo apt install -y --no-install-recommends "${missing_pkgs[@]}" || die "apt install failed"
+    log "Installing: ${missing_pkgs[*]}"
+    if sudo apt install -y --no-install-recommends "${missing_pkgs[@]}" > /tmp/pdx-apt.log 2>&1; then
+        log "OK — dependencies installed."
+        rm -f /tmp/pdx-apt.log
+    else
+        warn "Install failed. Last 20 lines of apt output:"
+        tail -20 /tmp/pdx-apt.log
+        rm -f /tmp/pdx-apt.log
+        die "apt install failed"
+    fi
 fi
 
 # --- 3. Base runtime ---
