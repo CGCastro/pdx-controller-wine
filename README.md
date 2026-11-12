@@ -64,6 +64,18 @@ See `docs/TECHNICAL.md` for details.
 `bin/pdx-controller-wine --check` reports the state of the runtime and prefix
 without changing anything.
 
+## HiDPI displays
+
+The launcher sets `LogPixels=192` (2x) by default, which suits Retina or
+4K screens. To use a different scale, pass `PDX_DPI` on the command line:
+
+    PDX_DPI=144 pdx-controller-wine        # 1.5x (typical 1080p laptop)
+    PDX_DPI=96  pdx-controller-wine        # 1x (external monitor)
+    PDX_DPI=192 pdx-controller-wine        # 2x (Retina, the default)
+
+The value is applied on every run when `PDX_DPI` is set, so you can switch
+without deleting the prefix. `--check` reports the current DPI.
+
 ## What works
 
 - PDX Controller launches on stock Wine 11.18 + the patch
@@ -104,6 +116,20 @@ today. See the Wine bug MR1494 discussion.
       0001-hidclass-implement-indexed-string.patch
     docs/
       TECHNICAL.md             why the patch is needed and what it does
+
+## Multiple installations
+
+The launcher respects two environment variables for isolating installations:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PDX_PREFIX` | `~/.local/share/pdx-controller-wine/prefix` | Wine prefix |
+| `PDX_RUNTIME` | `~/.local/share/pdx-controller-wine/runtime` | Patched Wine runtime |
+
+For a throwaway prefix (testing, CI):
+
+    PDX_PREFIX=/tmp/pdx-test pdx-controller-wine --install
+    PDX_PREFIX=/tmp/pdx-test pdx-controller-wine
 
 ## Removal
 
