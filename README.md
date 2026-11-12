@@ -140,4 +140,8 @@ runtime, and any other Wine prefix are untouched.
 
 ## Licence
 
-Patch: LGPL-2.1-or-later (matching Wine). Scripts: MIT.
+- **Wine patch** (`patches/`): LGPL-2.1-or-later, matching Wine.
+- **Scripts and documentation** (`bin/`, `docs/`, `README.md`): MIT.
+
+Full texts in [`LICENSES/`](LICENSES/):
+[LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt) · [MIT](LICENSES/MIT.txt)
