@@ -54,7 +54,7 @@ See `docs/TECHNICAL.md` for details.
 
 ## Install
 
-    git clone <repo-url> ~/GITs/pdx-controller-wine
+    git clone https://github.com/CGCastro/pdx-controller-wine.git ~/GITs/pdx-controller-wine
     cd ~/GITs/pdx-controller-wine
 
     bin/build-runtime.sh              # download wine-11.18, apply patch, compile
