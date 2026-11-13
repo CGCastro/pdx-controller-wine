@@ -129,35 +129,84 @@ patches and the project's 11 patches, and compiles.
 
 ## Install
 
-    git clone https://github.com/CGCastro/pdx-controller-wine.git ~/GITs/pdx-controller-wine
-    cd ~/GITs/pdx-controller-wine
+### Quick install (curl | bash)
 
-    bin/build-runtime.sh               # ~30-60 min, source build of wine-staging 11.18
-    bin/pdx-controller-wine --install  # download PDX Controller, install to prefix
-    bin/pdx-controller-wine            # launch
+One command, on a Debian or Ubuntu system, that does everything:
 
-`bin/pdx-controller-wine --check` reports the state of the runtime and prefix
-without changing anything.
+```bash
+curl -fsSL https://raw.githubusercontent.com/CGCastro/pdx-controller-wine/master/bin/install.sh | bash -s -- --full --yes
+```
+
+It installs git if missing, clones the repository to ~/GITs/pdx-controller-wine (override with PDX_SRC_DIR), installs the build dependencies, builds wine-staging 11.18 from source (30-60 minutes, with a progress bar), installs the PDX Controller into a Wine prefix with corefonts and DPI 192, then offers to remove the build tree, caches and apt packages.
+
+After that:
+
+```bash
+pdx-controller-wine
+```
+
+If you want to answer the cleanup questions yourself, drop --yes:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CGCastro/pdx-controller-wine/master/bin/install.sh | bash -s -- --full
+```
+
+### From a clone
+
+```bash
+git clone https://github.com/CGCastro/pdx-controller-wine.git ~/GITs/pdx-controller-wine
+cd ~/GITs/pdx-controller-wine
+bin/install.sh
+bin/build-runtime.sh
+bin/pdx-controller-wine --install
+bin/pdx-controller-wine
+```
+
+bin/pdx-controller-wine --check reports the state of the runtime and prefix without changing anything.
+
+### Build dependencies (Debian/Ubuntu)
+
+```bash
+sudo apt install -y git curl wget tar patch make gcc pkg-config unzip gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 winetricks libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxcomposite-dev libasound2-dev libfreetype-dev libfontconfig-dev libgl-dev libegl-dev libusb-1.0-0-dev libudev-dev libdbus-1-dev libgnutls28-dev
+```
+
+Fedora equivalent:
+
+```bash
+sudo dnf install -y git curl wget tar patch make gcc pkg-config unzip mingw64-gcc mingw32-gcc winetricks libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXinerama-devel libXcomposite-devel alsa-lib-devel freetype-devel fontconfig-devel mesa-libGL-devel mesa-libEGL-devel libusb1-devel systemd-devel dbus-devel gnutls-devel
+```
+
+bin/install.sh warns at startup if any of these are missing.
 
 ### If the build fails
 
-The script writes full logs to `~/.cache/pdx-runtime-build/`:
+Logs go to ~/.cache/pdx-runtime-build/:
 
 | File | Contents |
 |---|---|
-| `staging.log` | wine-staging patchset application |
-| `patch-*.log` | each project patch |
-| `configure.log` | `./configure` output |
-| `build.log` | `make` output |
-| `install.log` | `make install` output |
+| staging.log | wine-staging patchset application |
+| patch-*.log | each project patch |
+| configure.log | configure output |
+| build.log | make output |
+| install.log | make install output |
 
-The script prints a `tail` of the relevant log when a step fails. Most failures
-are missing development packages — the script names the feature that
-`configure` dropped.
+The script prints a tail of the relevant log when a step fails. Most failures are missing development packages - the script names the feature that configure dropped.
 
-`--without-ffmpeg` is passed to `configure` because the WineHQ tarball does not
-include all the ffmpeg submodules that `winegstreamer` needs. The PDX Controller
-is an audio application and does not use `winegstreamer`.
+--without-ffmpeg is passed to configure because the WineHQ tarball does not include all the ffmpeg submodules that winegstreamer needs. The PDX Controller is an audio application and does not use winegstreamer.
+
+### Removing what the build left behind
+
+| What | Size | Removed by |
+|---|---|---|
+| build/ (Wine source tree + object files) | ~4 GB | --cleanup, or rm -rf build/ |
+| ~/.cache/pdx-runtime-build/ | ~50 MB | --cleanup |
+| ~/.cache/winetricks/ | ~500 MB | --cleanup |
+| ~/.local/share/pdx-controller-wine/cache/ | ~5 MB | --cleanup |
+| apt packages installed for the build | ~400 MB | --cleanup |
+
+bin/install.sh --cleanup removes all of the above and keeps the runtime, prefix and launcher, so the app remains runnable. If you passed --yes to the initial --full install, cleanup already happened.
+
+The cleanup removes the apt packages the build installed. To rebuild Wine later (for example to test a smaller patch set), either skip the cleanup or reinstall the dependencies.
 
 ## HiDPI displays
 
