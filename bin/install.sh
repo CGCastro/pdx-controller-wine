@@ -110,9 +110,12 @@ die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 [ -x "$PROJECT_DIR/bin/fetch-pdx.sh" ] || die "fetch-pdx.sh not found in $PROJECT_DIR/bin/"
 
 PER_USER_RUNTIME="$HOME/.local/share/pdx-controller-wine/runtime"
-if [ ! -x "$PER_USER_RUNTIME/bin/wine" ]; then
+if [ "$FULL_INSTALL" = "1" ] && [ "$ACTION" = "install" ]; then
+    : # run_full builds the runtime before installing the launcher
+elif [ ! -x "$PER_USER_RUNTIME/bin/wine" ]; then
     die "runtime not found at $PER_USER_RUNTIME/bin/wine
-       Run first: $PROJECT_DIR/bin/build-runtime.sh"
+       Run first: $PROJECT_DIR/bin/build-runtime.sh
+       Or run this script with --full to build it and install."
 fi
 
 # --- dependency detection / installation / full install ---
