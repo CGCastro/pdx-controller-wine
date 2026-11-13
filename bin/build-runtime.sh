@@ -104,9 +104,47 @@ if grep -E "^configure: " "$CACHE_DIR/configure.log" | grep -Ei "libusb|libudev|
 fi
 
 log "build (-j$JOBS; ~30-60 min on first run)..."
-make -j"$JOBS" >"$CACHE_DIR/build.log" 2>&1 \
-  || { grep -iE "error" "$CACHE_DIR/build.log" | tail -20; die "build failed"; }
-log "  ok"
+# Run make in the background so a progress indicator can show percentage and
+# elapsed time. Total .c files approximates total .o targets (Wine's tree is
+# almost 1:1), close enough for a progress bar.
+total_c=$(find . -name '*.c' 2>/dev/null | wc -l)
+total_c=$(( total_c > 0 ? total_c : 4000 ))
+make -j"$JOBS" >"$CACHE_DIR/build.log" 2>&1 &
+MAKE_PID=$!
+start_ts=$(date +%s)
+last_pct=-1
+if [ -t 1 ]; then
+    while kill -0 "$MAKE_PID" 2>/dev/null; do
+        done_o=$(find . -name '*.o' 2>/dev/null | wc -l)
+        pct=$(( done_o * 100 / total_c ))
+        [ "$pct" -gt 100 ] && pct=100
+        elapsed=$(( $(date +%s) - start_ts ))
+        printf '\r[build] %3d%% (%d/%d .o) %dm%02ds   ' \
+            "$pct" "$done_o" "$total_c" $((elapsed/60)) $((elapsed%60))
+        sleep 5
+    done
+    echo
+else
+    while kill -0 "$MAKE_PID" 2>/dev/null; do
+        done_o=$(find . -name '*.o' 2>/dev/null | wc -l)
+        pct=$(( done_o * 100 / total_c ))
+        [ "$pct" -gt 100 ] && pct=100
+        elapsed=$(( $(date +%s) - start_ts ))
+        if [ "$pct" -ne "$last_pct" ] && [ $((elapsed % 60)) -lt 5 ]; then
+            log "  ${pct}% (${done_o}/${total_c} .o) ${elapsed}s"
+            last_pct=$pct
+        fi
+        sleep 5
+    done
+fi
+wait "$MAKE_PID"
+make_rc=$?
+if [ $make_rc -ne 0 ]; then
+    grep -iE "error" "$CACHE_DIR/build.log" | tail -20
+    die "build failed (exit $make_rc) - full log: $CACHE_DIR/build.log"
+fi
+elapsed=$(( $(date +%s) - start_ts ))
+log "  ok (built in $((elapsed/60))m$((elapsed%60))s)"
 
 log "installing to $RUNTIME_DIR..."
 rm -rf "$RUNTIME_DIR"
