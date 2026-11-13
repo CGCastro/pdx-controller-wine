@@ -11,3 +11,11 @@ runtime/
 *.swp
 *~
 .DS_Store
+
+# Backups and one-off artifacts
+*.bak
+*.orig
+*.rej
+
+# Local prefix (if anyone creates it inside the repo)
+prefix/
