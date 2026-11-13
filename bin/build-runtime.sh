@@ -87,13 +87,20 @@ done
 log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
 
-log "configure (--enable-archs=i386,x86_64) — a few minutes"
+if [ -n "${PDX_NO_ALSA:-}" ] || ! pkg-config --exists alsa 2>/dev/null; then
+    ALSA_FLAG="--without-alsa"
+    warn "ALSA dev files not found; building --without-alsa (HID still works)"
+else
+    ALSA_FLAG="--with-alsa"
+fi
+
+log "configure (--enable-archs=i386,x86_64, $ALSA_FLAG) — a few minutes"
 export CFLAGS="${CFLAGS:--O2 -pipe}" CROSSCFLAGS="${CROSSCFLAGS:--O2 -pipe}"
 ./configure \
   --prefix="$RUNTIME_DIR" \
   --enable-archs=i386,x86_64 \
   --disable-tests \
-  --with-x --with-alsa --with-opengl --with-dbus --with-gnutls \
+  --with-x $ALSA_FLAG --with-opengl --with-dbus --with-gnutls \
   --with-freetype --with-fontconfig --with-usb --with-udev --without-ffmpeg \
   >"$CACHE_DIR/configure.log" 2>&1 \
   || { tail -20 "$CACHE_DIR/configure.log"; die "configure failed"; }

@@ -166,23 +166,47 @@ install_deps_auto() {
     log "Build dependencies missing:"
     [ ${#MISSING_CMDS[@]} -gt 0 ] && log "  commands:    ${MISSING_CMDS[*]}"
     [ ${#MISSING_PC[@]} -gt 0 ]   && log "  pkg-config:  ${MISSING_PC[*]}"
-    local install_cmd
-    install_cmd="$(pkg_install_cmd)"
-    if [ -z "$install_cmd" ]; then
-        warn "no supported package manager; install manually"
-        return 1
-    fi
-    log "Installing with: $install_cmd"
+
     local sudo_prefix=""
     [ "$(id -u)" != "0" ] && sudo_prefix="sudo"
+
     # Snapshot packages before install, to track exactly what we add.
-    # The diff goes to a file used later by cleanup_after_full().
     local before_file="" after_file=""
     if command -v dpkg-query >/dev/null 2>&1; then
         before_file="$(mktemp)"
         dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$before_file"
     fi
-    $sudo_prefix sh -c "$install_cmd" || { warn "dependency install failed"; return 1; }
+
+    # Install in groups, so a conflict in one group (e.g. libasound2-dev
+    # against a newer libasound2t64) does not block the others. On Debian
+    # trixie, asking apt for everything at once fails the whole transaction.
+    local groups_ok=() groups_fail=()
+    install_group() {
+        local name="$1"; shift
+        [ $# -eq 0 ] && return 0
+        if $sudo_prefix apt-get install -y "$@" >/dev/null 2>&1 \
+           || $sudo_prefix dnf install -y "$@" >/dev/null 2>&1 \
+           || $sudo_prefix pacman -S --noconfirm --needed "$@" >/dev/null 2>&1; then
+            groups_ok+=("$name")
+            log "  ok    $name"
+        else
+            groups_fail+=("$name")
+            warn "  fail  $name: $*"
+        fi
+    }
+
+    log "Installing in groups (a failed group does not block the others):"
+    install_group base   git curl wget tar patch make gcc pkg-config unzip winetricks
+    install_group x11    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxcomposite-dev
+    install_group fonts  libfreetype-dev libfontconfig-dev
+    install_group gl     libgl-dev libegl-dev
+    install_group usb    libusb-1.0-0-dev libudev-dev
+    install_group dbus   libdbus-1-dev
+    install_group gnutls libgnutls28-dev
+    install_group alsa   libasound2-dev
+    install_group mingw64 gcc-mingw-w64-x86-64
+    install_group mingw32 gcc-mingw-w64-i686
+
     if [ -n "$before_file" ] && [ -f "$before_file" ] && command -v dpkg-query >/dev/null 2>&1; then
         after_file="$(mktemp)"
         dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$after_file"
@@ -197,12 +221,31 @@ install_deps_auto() {
     elif [ -n "$before_file" ]; then
         rm -f "$before_file"
     fi
+
     detect_missing_deps
-    if [ ${#MISSING_CMDS[@]} -gt 0 ] || [ ${#MISSING_PC[@]} -gt 0 ]; then
-        warn "still missing after install"
-        return 1
+    if [ ${#MISSING_PC[@]} -eq 0 ]; then
+        log "Build dependencies: installed"
+        return 0
     fi
-    log "Build dependencies: installed"
+
+    # Some pkg-config libraries are still missing. If the only gaps are ALSA
+    # (or ALSA plus mingw, which is not fatal until the PE build), continue:
+    # the PDX Controller talks to the amplifier over HID, and the Wine build
+    # can run without ALSA. build-runtime.sh reads PDX_NO_ALSA and passes
+    # --without-alsa to configure.
+    local fatal=0
+    for pc in "${MISSING_PC[@]}"; do
+        [ "$pc" = "alsa" ] && continue
+        fatal=1
+    done
+    if [ "$fatal" = "0" ]; then
+        warn "ALSA dev files missing; continuing with --without-alsa (HID still works)"
+        export PDX_NO_ALSA=1
+        return 0
+    fi
+
+    warn "still missing after install: ${MISSING_CMDS[*]:-} ${MISSING_PC[*]:-}"
+    return 1
 }
 
 check_deps() {
