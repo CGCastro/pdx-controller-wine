@@ -244,8 +244,8 @@ The launcher respects environment variables for isolating installations:
 
 For a throwaway prefix (testing, CI):
 
-    PDX_PREFIX=/tmp/pdx-test pdx-controller-wine --install
-    PDX_PREFIX=/tmp/pdx-test pdx-controller-wine
+    PDX_PREFIX=$HOME/tmp/pdx-test pdx-controller-wine --install
+    PDX_PREFIX=$HOME/tmp/pdx-test pdx-controller-wine
 
 ## Removal
 

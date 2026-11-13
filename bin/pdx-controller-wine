@@ -118,9 +118,12 @@ install_corefonts() {
         return 0
     fi
     log "Installing corefonts (fixes tofu glyphs)..."
-    PATH="$RUNTIME_DIR/bin:$PATH" WINE="$RUNTIME_DIR/bin/wine" \
-        WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
-        winetricks -q corefonts >/dev/null 2>&1 || true
+    if ! PATH="$RUNTIME_DIR/bin:$PATH" WINE="$RUNTIME_DIR/bin/wine" \
+         WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+         winetricks -q corefonts >/dev/null 2>&1; then
+        warn "winetricks corefonts failed — fonts may be missing"
+        warn "rerun later with: PDX_PREFIX=$PREFIX_DIR pdx-controller-wine --install"
+    fi
     # winetricks may revert to Win7; reapply
     set_win10
 }
@@ -130,7 +133,7 @@ set_dpi() {
     log "Setting DPI=${dpi} (override with PDX_DPI=<value>)..."
     WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Control Panel\\Desktop" \
-        /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null 2>&1
+        /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null
 }
 
 ensure_prefix() {
@@ -138,8 +141,23 @@ ensure_prefix() {
         return 0
     fi
     log "Creating prefix at $PREFIX_DIR (first run, 2-3 min)..."
+    # A wine prefix with corefonts is ~1 GB. Refuse early rather than fail
+    # halfway through, when winetricks starts and the disk is full.
+    local free_mb
+    free_mb=$(df -BM "$(dirname "$PREFIX_DIR")" 2>/dev/null | awk 'NR==2 {gsub("M","",$4); print $4}')
+    if [ -n "${free_mb:-}" ] && [ "$free_mb" -lt 1500 ]; then
+        warn "only ${free_mb} MB free on $(dirname "$PREFIX_DIR"); a prefix needs ~1 GB"
+        warn "free space, or set PDX_PREFIX to a filesystem with more room"
+        return 1
+    fi
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wineboot" -i >/dev/null 2>&1
+    # wineboot -i returns before the prefix's wineserver is ready on the
+    # source build of wine-staging 11.18. Without this wait the set_win10,
+    # corefonts and DPI steps run against a half-initialised prefix and
+    # fail silently.
+    WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
+        "$RUNTIME_DIR/bin/wineserver" -w >/dev/null 2>&1 || true
     WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Software\\Wine" /v HideWineExports /t REG_SZ /d Y /f >/dev/null 2>&1
     set_win10

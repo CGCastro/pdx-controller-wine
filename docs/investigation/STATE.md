@@ -37,6 +37,20 @@ rekordbox-wine aplicados, `--enable-archs=i386,x86_64`.
 - Mesma versão base (11.18) entre WineHQ e rekordbox-wine não implica
   comportamento idêntico; a build (source vs .deb) faz diferença.
 
+## Validado em 2026-11-13
+
+- Prefixo limpo criado com `--install` (em `~/tmp/pdx-clean-test2`):
+  corefonts 25 entradas, DPI 192, PDX Controller instalado.
+- `--run` arranca com texto legível, tamanho correcto, e liga ao PDX3000.
+- Fluxo de "novo utilizador" validado: `build-runtime.sh` (30-60 min) +
+  `pdx-controller-wine --install` + `pdx-controller-wine --run`.
+- Três bugs corrigidos no launcher: `wineserver -w` depois do `wineboot -i`
+  (o prefixo não estava pronto); `winetricks` a reportar falha em vez de
+  `|| true`; `reg add` do DPI sem esconder o erro. Verificação de espaço
+  (~1.5 GB) antes de criar o prefixo.
+- Nota: `/tmp` é tmpfs 2 GB no Debian. Os exemplos do README passaram a usar
+  `$HOME/tmp/...`.
+
 ## Próxima acção (uma)
 
 Correr `bin/build-runtime.sh` e verificar que (a) os 11 patches aplicam,
