@@ -88,13 +88,22 @@ log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
 
 # --- icecc support (optional) ---
-# Use the icecc wrapper directory in PATH. configure then sees CC="gcc"
-# (no space in the value, so autoconf does not trip on "icecc gcc" being
-# treated as a single command name). The gcc in /usr/lib/icecc/bin is a
-# symlink to icecc, which invokes the real gcc with the work dispatched.
+# Use the icecc wrapper directory in PATH so configure/make see plain
+# compiler names (CC="gcc", no spaces) and icecc dispatches each -c job
+# to the cluster. /usr/lib/icecc/bin only has wrappers for gcc/g++/cc/c++/
+# clang/clang++; create local symlinks for the mingw cross-compilers so
+# the PE builds are distributed too (they are most of Wine).
 if command -v icecc >/dev/null 2>&1; then
     log "icecc detected — enabling distributed compilation via PATH"
-    export PATH="/usr/lib/icecc/bin:$PATH"
+    ICECC_WRAPPERS="$CACHE_DIR/icecc-wrappers"
+    mkdir -p "$ICECC_WRAPPERS"
+    for cc in i686-w64-mingw32-gcc x86_64-w64-mingw32-gcc \
+              i686-w64-mingw32-g++ x86_64-w64-mingw32-g++; do
+        if command -v "$cc" >/dev/null 2>&1; then
+            ln -sf /usr/bin/icecc "$ICECC_WRAPPERS/$cc"
+        fi
+    done
+    export PATH="$ICECC_WRAPPERS:/usr/lib/icecc/bin:$PATH"
     export CC="gcc"
     export CXX="g++"
     export i386_CC="i686-w64-mingw32-gcc"
