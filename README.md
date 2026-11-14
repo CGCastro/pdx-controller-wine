@@ -134,7 +134,10 @@ patches and the project's 11 patches, and compiles.
 One command, on a Debian or Ubuntu system, that does everything:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CGCastro/pdx-controller-wine/master/bin/install.sh | bash -s -- --full --yes
+time ( \
+  command -v curl >/dev/null 2>&1 || sudo apt install -y curl; \
+  curl -fsSL https://raw.githubusercontent.com/CGCastro/pdx-controller-wine/master/bin/install.sh | bash -s -- --full --yes \
+)
 ```
 
 It installs git if missing, clones the repository to ~/GITs/pdx-controller-wine (override with PDX_SRC_DIR), installs the build dependencies, builds wine-staging 11.18 from source (30-60 minutes, with a progress bar), installs the PDX Controller into a Wine prefix with corefonts and DPI 192, then offers to remove the build tree, caches and apt packages.
