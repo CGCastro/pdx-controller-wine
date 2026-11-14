@@ -88,19 +88,18 @@ log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
 
 # --- icecc support (optional) ---
-# icecc is only used for the make step, not for configure: autoconf
-# probes the compiler in ways that icecc does not support (compile+link,
-# --version, etc.). configure uses the native gcc; make uses the
-# icecc wrappers so the thousands of .o jobs are distributed.
-ICECC_MAKE_ARGS=()
+# Follow the Wine wiki: prefix the *CC environment variables with icecc
+# before configure. The configure script records these in the Makefile.
 if command -v icecc >/dev/null 2>&1; then
-    log "icecc detected — distributed compilation will be used by make"
-    ICECC_MAKE_ARGS=(
-        "CC=icecc gcc"
-        "CXX=icecc g++"
-        "i386_CC=icecc i686-w64-mingw32-gcc"
-        "x86_64_CC=icecc x86_64-w64-mingw32-gcc"
-    )
+    log "icecc detected — enabling distributed compilation"
+    export CC="icecc gcc"
+    export CXX="icecc g++"
+    export i386_CC="icecc i686-w64-mingw32-gcc"
+    export x86_64_CC="icecc x86_64-w64-mingw32-gcc"
+    # ICECC_CC/ICECC_CXX tell icecc which native compiler to use for
+    # preprocessing. Without them, configure's probe may fail.
+    export ICECC_CC="gcc"
+    export ICECC_CXX="g++"
     export ICECC_DEBUG=debug
     export ICECC_LOGFILE="$CACHE_DIR/icecc.log"
 else
@@ -136,7 +135,7 @@ log "build (-j$JOBS; ~30-60 min on first run)..."
 # almost 1:1), close enough for a progress bar.
 total_c=$(find . -name '*.c' 2>/dev/null | wc -l)
 total_c=$(( total_c > 0 ? total_c : 4000 ))
-make -j"$JOBS" "${ICECC_MAKE_ARGS[@]}" >"$CACHE_DIR/build.log" 2>&1 &
+make -j"$JOBS" >"$CACHE_DIR/build.log" 2>&1 &
 MAKE_PID=$!
 start_ts=$(date +%s)
 last_pct=-1
