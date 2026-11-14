@@ -88,18 +88,19 @@ log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
 
 # --- icecc support (optional) ---
-# Follow the Wine wiki: prefix the *CC environment variables with icecc
-# before configure. The configure script records these in the Makefile.
+# Use the icecc wrapper directory in PATH. configure then sees CC="gcc"
+# (no space in the value, so autoconf does not trip on "icecc gcc" being
+# treated as a single command name). The gcc in /usr/lib/icecc/bin is a
+# symlink to icecc, which invokes the real gcc with the work dispatched.
 if command -v icecc >/dev/null 2>&1; then
-    log "icecc detected — enabling distributed compilation"
-    export CC="icecc gcc"
-    export CXX="icecc g++"
-    export i386_CC="icecc i686-w64-mingw32-gcc"
-    export x86_64_CC="icecc x86_64-w64-mingw32-gcc"
-    # ICECC_CC/ICECC_CXX tell icecc which native compiler to use for
-    # preprocessing. Without them, configure's probe may fail.
-    export ICECC_CC="gcc"
-    export ICECC_CXX="g++"
+    log "icecc detected — enabling distributed compilation via PATH"
+    export PATH="/usr/lib/icecc/bin:$PATH"
+    export CC="gcc"
+    export CXX="g++"
+    export i386_CC="i686-w64-mingw32-gcc"
+    export x86_64_CC="x86_64-w64-mingw32-gcc"
+    export ICECC_CC="/usr/bin/gcc"
+    export ICECC_CXX="/usr/bin/g++"
     export ICECC_DEBUG=debug
     export ICECC_LOGFILE="$CACHE_DIR/icecc.log"
 else
