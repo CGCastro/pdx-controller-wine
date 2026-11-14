@@ -110,7 +110,9 @@ die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 [ -x "$PROJECT_DIR/bin/fetch-pdx.sh" ] || die "fetch-pdx.sh not found in $PROJECT_DIR/bin/"
 
 PER_USER_RUNTIME="$HOME/.local/share/pdx-controller-wine/runtime"
-if [ "$FULL_INSTALL" = "1" ] && [ "$ACTION" = "install" ]; then
+if [ "$ACTION" = "cleanup" ] || [ "$ACTION" = "uninstall" ]; then
+    : # cleanup and uninstall do not need the runtime to exist
+elif [ "$FULL_INSTALL" = "1" ] && [ "$ACTION" = "install" ]; then
     : # run_full builds the runtime before installing the launcher
 elif [ ! -x "$PER_USER_RUNTIME/bin/wine" ]; then
     die "runtime not found at $PER_USER_RUNTIME/bin/wine
@@ -196,7 +198,7 @@ install_deps_auto() {
     }
 
     log "Installing in groups (a failed group does not block the others):"
-    install_group base   git curl wget tar patch make gcc pkg-config unzip winetricks
+    install_group base   git curl wget tar patch make gcc pkg-config unzip winetricks autoconf automake libtool flex bison
     install_group x11    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxcomposite-dev
     install_group fonts  libfreetype-dev libfontconfig-dev
     install_group gl     libgl-dev libegl-dev
@@ -262,9 +264,14 @@ check_deps() {
 }
 
 cleanup_after_full() {
+    local build_failed="${1:-0}"
     log ""
     log "=== Cleanup ==="
-    log "The app is installed. Everything else from the build is optional."
+    if [ "$build_failed" = "1" ]; then
+        log "The build failed. Removing what was installed for it."
+    else
+        log "The app is installed. Everything else from the build is optional."
+    fi
     log ""
 
     local build_dir="$PROJECT_DIR/build"
@@ -342,8 +349,12 @@ cleanup_after_full() {
 
     log ""
     log "Cleanup complete."
-    log "Kept: runtime (~745 MB), prefix (~1 GB), launcher, PDX Controller."
-    log "The app is ready: run \"pdx-controller-wine\" to launch."
+    if [ "$build_failed" = "1" ]; then
+        log "The build did not produce a runtime. Re-run --full to try again."
+    else
+        log "Kept: runtime (~745 MB), prefix (~1 GB), launcher, PDX Controller."
+        log "The app is ready: run \"pdx-controller-wine\" to launch."
+    fi
 }
 
 run_full() {
@@ -352,7 +363,15 @@ run_full() {
     log ""
     log "Running the Wine source build (30-60 minutes)..."
     if ! "$PROJECT_DIR/bin/build-runtime.sh"; then
-        die "build-runtime.sh failed - see ~/.cache/pdx-runtime-build/ for logs"
+        warn "build-runtime.sh failed - see ~/.cache/pdx-runtime-build/ for logs"
+        echo ""
+        local reply
+        reply="$(ask "Remove everything that was installed for the build? [Y/n] " "y")"
+        case "$reply" in
+            [yY]|[yY][eE][sS]|"") cleanup_after_full 1 ;;
+            *) log "Kept. Inspect ~/.cache/pdx-runtime-build/ to diagnose." ;;
+        esac
+        die "build-runtime.sh failed"
     fi
     log ""
     log "Installing PDX Controller into the prefix..."
