@@ -87,6 +87,21 @@ done
 log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
 
+# --- icecc support (optional) ---
+if command -v icecc >/dev/null 2>&1; then
+    log "icecc detected — enabling distributed compilation"
+    export CC="icecc gcc"
+    export CXX="icecc g++"
+    export i386_CC="icecc i686-w64-mingw32-gcc"
+    export x86_64_CC="icecc x86_64-w64-mingw32-gcc"
+    export ICECC_CC="gcc"
+    export ICECC_CXX="g++"
+    export ICECC_DEBUG=debug
+    export ICECC_LOGFILE="$CACHE_DIR/icecc.log"
+else
+    log "icecc not found — compiling locally"
+fi
+
 if [ -n "${PDX_NO_ALSA:-}" ] || ! pkg-config --exists alsa 2>/dev/null; then
     ALSA_FLAG="--without-alsa"
     warn "ALSA dev files not found; building --without-alsa (HID still works)"
