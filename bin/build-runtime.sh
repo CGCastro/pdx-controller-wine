@@ -42,7 +42,7 @@ fetch() {
   local url="$1" sum="$2" out="$CACHE_DIR/$3"
   if [[ ! -f "$out" ]] || ! echo "$sum  $out" | sha256sum -c --status; then
     log "fetching $3"
-    curl -fL --retry 3 -o "$out.part" "$url" || die "download failed: $url"
+    curl -fL --retry 3 -# -o "$out.part" "$url" || die "download failed: $url"
     mv -f "$out.part" "$out"
   fi
   echo "$sum  $out" | sha256sum -c --status || die "sha256 mismatch: $out"
