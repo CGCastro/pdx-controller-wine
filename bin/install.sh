@@ -198,7 +198,7 @@ install_deps_auto() {
     }
 
     log "Installing in groups (a failed group does not block the others):"
-    install_group base   git curl wget tar patch make gcc pkg-config unzip winetricks autoconf automake libtool flex bison
+    install_group base   git curl wget tar patch make gcc pkg-config unzip winetricks autoconf automake libtool flex bison x11-utils
     install_group x11    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxcomposite-dev
     install_group fonts  libfreetype-dev libfontconfig-dev
     install_group gl     libgl-dev libegl-dev

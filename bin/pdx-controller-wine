@@ -128,9 +128,40 @@ install_corefonts() {
     set_win10
 }
 
+detect_dpi() {
+    # Explicit override always wins.
+    if [ -n "${PDX_DPI:-}" ]; then
+        echo "$PDX_DPI"
+        return
+    fi
+
+    # Try X11: xdpyinfo reports "resolution: NNxMM dots per inch".
+    # x11-utils provides it; without it we fall through to the default.
+    local detected=""
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        local res
+        res=$(xdpyinfo 2>/dev/null | awk '/resolution:/ {print $2; exit}')
+        if [ -n "$res" ]; then
+            detected=$(echo "$res" | awk -Fx '{printf "%d", ($1+$2)/2}')
+        fi
+    fi
+
+    # No usable detection (SSH without X, Wayland without Xwayland, etc.).
+    if [ -z "$detected" ] || [ "$detected" -lt 50 ] 2>/dev/null; then
+        echo "96"
+        return
+    fi
+
+    # Round to nearest multiple of 24: 96, 120, 144, 168, 192, 216, 240.
+    local rounded=$(( (detected + 12) / 24 * 24 ))
+    [ "$rounded" -lt 96 ]  && rounded=96
+    [ "$rounded" -gt 240 ] && rounded=240
+    echo "$rounded"
+}
+
 set_dpi() {
-    local dpi="${PDX_DPI:-192}"
-    log "Setting DPI=${dpi} (override with PDX_DPI=<value>)..."
+    local dpi; dpi="$(detect_dpi)"
+    log "Setting DPI=${dpi} (auto-detected; override with PDX_DPI=<value>)..."
     WINEPREFIX="$PREFIX_DIR" WINEDEBUG=-all \
         "$RUNTIME_DIR/bin/wine" reg add "HKCU\\Control Panel\\Desktop" \
         /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null
