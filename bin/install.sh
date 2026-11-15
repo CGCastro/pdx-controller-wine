@@ -381,6 +381,19 @@ run_full() {
     install_deps_auto || die "dependencies not satisfied"
     log ""
     log "Running the Wine source build (30-60 minutes)..."
+    # --- deteção automática de icecc + JOBS ---
+    if command -v icecc >/dev/null 2>&1; then
+        log "icecc detected — running preflight (mingw g++ + environments)"
+        "$PROJECT_DIR/bin/icecc-preflight.sh" \
+            || warn "icecc preflight reported issues; build may fall back to local"
+        _jobs="$("$PROJECT_DIR/bin/detect-jobs.sh")"
+        log "  cluster slots available: $_jobs → JOBS=$_jobs"
+        export JOBS="$_jobs"
+    else
+        log "icecc not detected — local build only"
+    fi
+    # --- fim da deteção ---
+
     if ! "$PROJECT_DIR/bin/build-runtime.sh"; then
         warn "build-runtime.sh failed - see ~/.cache/pdx-runtime-build/ for logs"
         echo ""

@@ -14,7 +14,9 @@ WINE_SHA256="c6282f6d4daecf11f3ab9f9a2b6c598f67be7e28c363ba2cae8a3c44b611e7a4"
 STAGING_URL="https://github.com/wine-staging/wine-staging/archive/refs/tags/v${WINE_VERSION}.tar.gz"
 STAGING_SHA256="be9ab2471ce3ef729484c9d7e2752790a9145e1bb0c0e680f01268d15e5488c5"
 
-JOBS="${JOBS:-$(nproc)}"
+_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JOBS="${JOBS:-$("$_self_dir/detect-jobs.sh")}"
+LOAD_LIMIT="${LOAD_LIMIT:-$(nproc 2>/dev/null || echo 1)}"
 
 log()  { printf '\033[1;36m[build]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -138,13 +140,13 @@ if grep -E "^configure: " "$CACHE_DIR/configure.log" | grep -Ei "libusb|libudev|
   warn "configure dropped a feature above — install the dev package and rerun"
 fi
 
-log "build (-j$JOBS; ~30-60 min on first run)..."
+log "build (-j$JOBS -l$LOAD_LIMIT; ~30-60 min on first run)..."
 # Run make in the background so a progress indicator can show percentage and
 # elapsed time. Total .c files approximates total .o targets (Wine's tree is
 # almost 1:1), close enough for a progress bar.
 total_c=$(find . -name '*.c' 2>/dev/null | wc -l)
 total_c=$(( total_c > 0 ? total_c : 4000 ))
-make -j"$JOBS" >"$CACHE_DIR/build.log" 2>&1 &
+make -j"$JOBS" -l"$LOAD_LIMIT" >"$CACHE_DIR/build.log" 2>&1 &
 MAKE_PID=$!
 start_ts=$(date +%s)
 last_pct=-1
