@@ -14,6 +14,9 @@ if [ -x "/usr/local/lib/pdx-controller-wine/fetch-pdx.sh" ]; then
     FETCH_SCRIPT="/usr/local/lib/pdx-controller-wine/fetch-pdx.sh"
 else
     FETCH_SCRIPT="$PROJECT_DIR/bin/fetch-pdx.sh"
+    if [ ! -x "$FETCH_SCRIPT" ] && [ -x "$HOME/.local/lib/pdx-controller-wine/fetch-pdx.sh" ]; then
+        FETCH_SCRIPT="$HOME/.local/lib/pdx-controller-wine/fetch-pdx.sh"
+    fi
 fi
 # Runtime priority: env override > /opt system install > per-user
 if [ -n "${PDX_RUNTIME:-}" ]; then

@@ -108,10 +108,9 @@ if command -v icecc >/dev/null 2>&1; then
     export CXX="g++"
     export i386_CC="i686-w64-mingw32-gcc"
     export x86_64_CC="x86_64-w64-mingw32-gcc"
-    export ICECC_CC="/usr/bin/gcc"
-    export ICECC_CXX="/usr/bin/g++"
     export ICECC_DEBUG=debug
     export ICECC_LOGFILE="$CACHE_DIR/icecc.log"
+    "$(dirname "${BASH_SOURCE[0]}")/icecc-preflight.sh" || true
 else
     log "icecc not found — compiling locally"
 fi
@@ -151,7 +150,7 @@ start_ts=$(date +%s)
 last_pct=-1
 if [ -t 1 ]; then
     while kill -0 "$MAKE_PID" 2>/dev/null; do
-        done_o=$(find . -name '*.o' 2>/dev/null | wc -l)
+        done_o=$({ find . -name '*.o' 2>/dev/null || true; } | wc -l)
         pct=$(( done_o * 100 / total_c ))
         [ "$pct" -gt 100 ] && pct=100
         elapsed=$(( $(date +%s) - start_ts ))
@@ -162,7 +161,7 @@ if [ -t 1 ]; then
     echo
 else
     while kill -0 "$MAKE_PID" 2>/dev/null; do
-        done_o=$(find . -name '*.o' 2>/dev/null | wc -l)
+        done_o=$({ find . -name '*.o' 2>/dev/null || true; } | wc -l)
         pct=$(( done_o * 100 / total_c ))
         [ "$pct" -gt 100 ] && pct=100
         elapsed=$(( $(date +%s) - start_ts ))
