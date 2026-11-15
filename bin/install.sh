@@ -250,6 +250,25 @@ install_deps_auto() {
     return 1
 }
 
+install_udev_rule() {
+    local rule="/etc/udev/rules.d/99-pdx3000.rules"
+    if [ -f "$rule" ]; then
+        log "udev rule already present: $rule"
+        return 0
+    fi
+    log "Installing udev rule for PDX3000 (sudo required)"
+    local sudo_prefix=""
+    [ "$(id -u)" != "0" ] && sudo_prefix="sudo"
+    $sudo_prefix tee "$rule" > /dev/null <<'UDEV_EOF'
+# PDX3000 (LAB.GRUPPEN, VID 1220 PID 4701)
+# Gives the logged-in user access to the hidraw device so Wine can open it.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1220", ATTRS{idProduct}=="4701", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+UDEV_EOF
+    $sudo_prefix udevadm control --reload-rules
+    $sudo_prefix udevadm trigger
+    log "udev rule installed. Replug the PDX3000 so it takes effect."
+}
+
 check_deps() {
     detect_missing_deps
     if [ ${#MISSING_CMDS[@]} -eq 0 ] && [ ${#MISSING_PC[@]} -eq 0 ]; then
@@ -378,6 +397,7 @@ run_full() {
     if ! "$PROJECT_DIR/bin/pdx-controller-wine" --install; then
         die "PDX Controller install failed"
     fi
+    install_udev_rule
     log ""
     log "Full install complete."
     cleanup_after_full
@@ -503,6 +523,7 @@ if [ "$FULL_INSTALL" = "1" ] && [ "$ACTION" = "install" ]; then
     exit $?
 fi
 check_deps
+install_udev_rule
 
 log "Verifying installation..."
 if [ "$MODE" = "system" ]; then
