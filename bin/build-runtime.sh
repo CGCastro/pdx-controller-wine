@@ -3,6 +3,17 @@
 # Source build: wine-staging 11.18 + the patch series from patches/.
 set -euo pipefail
 
+# Inhibitor de suspensao: adquire no inicio, liberta no fim (mesmo em falha).
+_INHIBIT_PID=""
+if [ -z "${PDX_INHIBITED:-}" ] && command -v systemd-inhibit >/dev/null 2>&1; then
+    systemd-inhibit --what=idle:sleep --who="pdx-wine-build" \
+        --why="Wine compilation" --mode=block sleep infinity &
+    _INHIBIT_PID=$!
+    export PDX_INHIBITED=1
+    trap '[ -n "$_INHIBIT_PID" ] && kill "$_INHIBIT_PID" 2>/dev/null || true' EXIT INT TERM
+fi
+
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME_DIR="$HOME/.local/share/pdx-controller-wine/runtime"
 BUILD_DIR="$PROJECT_DIR/build"

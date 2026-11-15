@@ -377,6 +377,16 @@ cleanup_after_full() {
 }
 
 run_full() {
+    # Inhibitor de suspensao durante o processo completo
+    # (deps + build + install + udev + cleanup). build-runtime.sh
+    # ve PDX_INHIBITED=1 e nao readquire.
+    if [ -z "${PDX_INHIBITED:-}" ] && command -v systemd-inhibit >/dev/null 2>&1; then
+        systemd-inhibit --what=idle:sleep --who="pdx-wine-install" \
+            --why="Full install" --mode=block sleep infinity &
+        _INSTALL_INHIBIT_PID=$!
+        export PDX_INHIBITED=1
+        trap '[ -n "$_INSTALL_INHIBIT_PID" ] && kill "$_INSTALL_INHIBIT_PID" 2>/dev/null || true' EXIT INT TERM
+    fi
     log "Full install: dependencies -> build (~30-60 min) -> PDX Controller"
     install_deps_auto || die "dependencies not satisfied"
     log ""
