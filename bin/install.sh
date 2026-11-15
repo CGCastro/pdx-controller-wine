@@ -405,7 +405,7 @@ run_full() {
         "$PROJECT_DIR/bin/icecc-preflight.sh" \
             || warn "icecc preflight reported issues; build may fall back to local"
         _jobs="$("$PROJECT_DIR/bin/detect-jobs.sh")"
-        log "  cluster slots available: $_jobs → JOBS=$_jobs"
+        log "  JOBS=$_jobs (cluster slots + queue margin)"
         export JOBS="$_jobs"
     else
         log "icecc not detected — local build only"

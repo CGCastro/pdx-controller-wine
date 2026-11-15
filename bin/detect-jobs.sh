@@ -42,7 +42,9 @@ if command -v nc >/dev/null 2>&1; then
 fi
 
 if [ "$_slots" -gt 0 ]; then
-    _j="$_slots"
+    # Keep a queue: more make jobs than cluster slots, so a free slot is refilled at once
+    # (queued jobs wait in the scheduler and cost no network). JOBS_MARGIN is a percentage.
+    _j=$(( _slots + _slots * ${JOBS_MARGIN:-50} / 100 ))
 else
     _j=$(( $(_ncpus) * 2 ))
 fi

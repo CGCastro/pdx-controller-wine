@@ -27,7 +27,14 @@ STAGING_SHA256="be9ab2471ce3ef729484c9d7e2752790a9145e1bb0c0e680f01268d15e5488c5
 
 _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOBS="${JOBS:-$("$_self_dir/detect-jobs.sh")}"
-LOAD_LIMIT="${LOAD_LIMIT:-$(nproc 2>/dev/null || echo 1)}"
+# With icecc the cluster does the compiling and the local load average includes the
+# jobs this machine runs as a worker, so a -l limit just starves the cluster.
+# Set LOAD_LIMIT explicitly to force one.
+if command -v icecc >/dev/null 2>&1; then
+    LOAD_LIMIT="${LOAD_LIMIT:-}"
+else
+    LOAD_LIMIT="${LOAD_LIMIT:-$(nproc 2>/dev/null || echo 1)}"
+fi
 
 log()  { printf '\033[1;36m[build]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -42,9 +49,12 @@ for pc in x11 alsa freetype2 fontconfig gl libusb-1.0 libudev; do
   pkg-config --exists "$pc" 2>/dev/null || warn "pkg-config $pc not found — configure may drop a needed feature"
 done
 
-free_gb=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+# Measure where the build actually writes (the clone), not "/": /home is often
+# a separate partition.
+free_path="$PROJECT_DIR"; [ -d "$free_path" ] || free_path="$HOME"
+free_gb=$(df -BG "$free_path" | awk 'NR==2 {gsub("G","",$4); print $4}')
 if [ "$free_gb" -lt 10 ]; then
-  warn "only ${free_gb}G free on /; source build needs ~10G"
+  warn "only ${free_gb}G free on $free_path; source build needs ~10G"
   read -r -p "Continue anyway? [y/N] " reply
   [[ "$reply" =~ ^[yY] ]] || exit 1
 fi
@@ -64,6 +74,18 @@ fetch "$WINE_URL"    "$WINE_SHA256"    "wine-${WINE_VERSION}.tar.xz"
 fetch "$STAGING_URL" "$STAGING_SHA256" "wine-staging-${WINE_VERSION}.tar.gz"
 
 SRC="$BUILD_DIR/wine-${WINE_VERSION}-pdx"
+# Reuse the prepared source tree when the inputs are unchanged, so a repeated or
+# interrupted run resumes the incremental make instead of re-extracting
+# everything (fresh mtimes => full rebuild). FORCE_CLEAN=1 starts from scratch.
+PREP_SIG="$( { echo "$WINE_SHA256 $STAGING_SHA256"
+               cat "$PROJECT_DIR"/patches/0*.patch \
+                   "$PROJECT_DIR/patches/splice-usbhcd.py" \
+                   "$PROJECT_DIR/patches/rbw-usbhcd.c"; } | sha256sum | cut -d' ' -f1 )"
+if [ -z "${FORCE_CLEAN:-}" ] && [ -f "$SRC/.pdx-prep-ok" ] \
+   && [ "$(cat "$SRC/.pdx-prep-ok")" = "$PREP_SIG" ]; then
+  log "source tree already prepared (inputs unchanged) - reusing it (FORCE_CLEAN=1 to start over)"
+  cd "$SRC"
+else
 log "extracting wine source to $SRC"
 rm -rf "$SRC"; mkdir -p "$SRC"
 tar -C "$SRC" --strip-components=1 -xf "$CACHE_DIR/wine-${WINE_VERSION}.tar.xz"
@@ -99,6 +121,8 @@ done
 
 log "splicing rbw-usbhcd.c into wineusb.sys..."
 python3 "$PROJECT_DIR/patches/splice-usbhcd.py" "$PROJECT_DIR/patches/rbw-usbhcd.c" "$SRC"
+echo "$PREP_SIG" > "$SRC/.pdx-prep-ok"
+fi
 
 # --- icecc support (optional) ---
 # Use the icecc wrapper directory in PATH so configure/make see plain
@@ -123,7 +147,7 @@ if command -v icecc >/dev/null 2>&1; then
     export x86_64_CC="x86_64-w64-mingw32-gcc"
     export ICECC_DEBUG=debug
     export ICECC_LOGFILE="$CACHE_DIR/icecc.log"
-    "$(dirname "${BASH_SOURCE[0]}")/icecc-preflight.sh" || true
+    "$PROJECT_DIR/bin/icecc-preflight.sh" || true
 else
     log "icecc not found — compiling locally"
 fi
@@ -135,6 +159,11 @@ else
     ALSA_FLAG="--with-alsa"
 fi
 
+CONF_SIG="$(printf '%s\n' "$RUNTIME_DIR" "$ALSA_FLAG" "${CFLAGS:--O2 -pipe}" "${CROSSCFLAGS:--O2 -pipe}" | sha256sum | cut -d' ' -f1)"
+if [ -f "$SRC/.pdx-configure-ok" ] && [ -f "$SRC/Makefile" ] \
+   && [ "$(cat "$SRC/.pdx-configure-ok")" = "$CONF_SIG" ]; then
+  log "configure: same options as the previous run - skipping"
+else
 log "configure (--enable-archs=i386,x86_64, $ALSA_FLAG) — a few minutes"
 export CFLAGS="${CFLAGS:--O2 -pipe}" CROSSCFLAGS="${CROSSCFLAGS:--O2 -pipe}"
 ./configure \
@@ -146,18 +175,20 @@ export CFLAGS="${CFLAGS:--O2 -pipe}" CROSSCFLAGS="${CROSSCFLAGS:--O2 -pipe}"
   >"$CACHE_DIR/configure.log" 2>&1 \
   || { tail -20 "$CACHE_DIR/configure.log"; die "configure failed"; }
 log "  ok"
+echo "$CONF_SIG" > "$SRC/.pdx-configure-ok"
+fi
 
 if grep -E "^configure: " "$CACHE_DIR/configure.log" | grep -Ei "libusb|libudev|gnutls|freetype|fontconfig|OpenGL|alsa|dbus"; then
   warn "configure dropped a feature above — install the dev package and rerun"
 fi
 
-log "build (-j$JOBS -l$LOAD_LIMIT; ~30-60 min on first run)..."
+log "build (-j$JOBS${LOAD_LIMIT:+ -l$LOAD_LIMIT}; ~30-60 min on first run)..."
 # Run make in the background so a progress indicator can show percentage and
 # elapsed time. Total .c files approximates total .o targets (Wine's tree is
 # almost 1:1), close enough for a progress bar.
 total_c=$(find . -name '*.c' 2>/dev/null | wc -l)
 total_c=$(( total_c > 0 ? total_c * 2 : 8000 ))  # x2: each PE .c is built once per arch (--enable-archs=i386,x86_64)
-make -j"$JOBS" -l"$LOAD_LIMIT" >"$CACHE_DIR/build.log" 2>&1 &
+make -j"$JOBS" ${LOAD_LIMIT:+-l"$LOAD_LIMIT"} >"$CACHE_DIR/build.log" 2>&1 &
 MAKE_PID=$!
 start_ts=$(date +%s)
 last_pct=-1
