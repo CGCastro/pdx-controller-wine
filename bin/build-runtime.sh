@@ -53,10 +53,20 @@ done
 # a separate partition.
 free_path="$PROJECT_DIR"; [ -d "$free_path" ] || free_path="$HOME"
 free_gb=$(df -BG "$free_path" | awk 'NR==2 {gsub("G","",$4); print $4}')
-if [ "$free_gb" -lt 10 ]; then
-  warn "only ${free_gb}G free on $free_path; source build needs ~10G"
-  read -r -p "Continue anyway? [y/N] " reply
-  [[ "$reply" =~ ^[yY] ]] || exit 1
+min_free_gb="${PDX_MIN_FREE_GB:-10}"
+if [ "$free_gb" -lt "$min_free_gb" ]; then
+  warn "only ${free_gb}G free on $free_path; source build needs ~${min_free_gb}G"
+  if [ "${NO_CONFIRM:-0}" = "1" ]; then
+    warn "continuing anyway (--yes); watch the disk"
+  else
+    reply=""
+    if [ -t 0 ]; then
+      read -r -p "Continue anyway? [y/N] " reply
+    elif { : < /dev/tty; } 2>/dev/null; then
+      read -r -p "Continue anyway? [y/N] " reply < /dev/tty
+    fi
+    [[ "$reply" =~ ^[yY] ]] || die "not enough free space (PDX_MIN_FREE_GB=<n> lowers the limit, NO_CONFIRM=1 skips the question)"
+  fi
 fi
 
 mkdir -p "$CACHE_DIR" "$BUILD_DIR"
