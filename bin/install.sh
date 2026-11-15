@@ -160,6 +160,14 @@ pkg_install_cmd() {
 }
 
 install_deps_auto() {
+    # Optional: icoutils (wrestool/icotool) gives the menu entry its real icon.
+    if ! command -v wrestool >/dev/null 2>&1 || ! command -v icotool >/dev/null 2>&1; then
+        local _sp=""; [ "$(id -u)" != "0" ] && _sp="sudo"
+        $_sp apt-get install -y icoutils >/dev/null 2>&1 \
+          || $_sp dnf install -y icoutils >/dev/null 2>&1 \
+          || $_sp pacman -S --noconfirm --needed icoutils >/dev/null 2>&1 \
+          || warn "icoutils not installed - the menu entry will use a generic icon"
+    fi
     detect_missing_deps
     if [ ${#MISSING_CMDS[@]} -eq 0 ] && [ ${#MISSING_PC[@]} -eq 0 ]; then
         log "Build dependencies: all present"
@@ -489,6 +497,11 @@ if [ "$ACTION" = "uninstall" ]; then
     if [ -d "$CACHE_DIR" ]; then
         rm -rf "$CACHE_DIR"; ok "removed cache"
     fi
+
+    # Menu entry and icon created by the launcher's --install
+    rm -f "$HOME/.local/share/applications/pdx-controller-wine.desktop" \
+          "$HOME/.local/share/pdx-controller-wine/icon.png"
+    ok "removed menu entry"
 
     echo ""
     log "Uninstall complete."

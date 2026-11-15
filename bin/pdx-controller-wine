@@ -170,11 +170,48 @@ set_dpi() {
         /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null
 }
 
+install_desktop_entry() {
+    # Menu entry + icon (always per-user: the wine prefix is per-user too).
+    local app_dir="$HOME/.local/share/applications"
+    local data_dir="$HOME/.local/share/pdx-controller-wine"
+    local icon="application-x-executable" self tmp best
+    self="$(readlink -f "${BASH_SOURCE[0]}")"
+    mkdir -p "$app_dir" "$data_dir"
+    if command -v wrestool >/dev/null 2>&1 && command -v icotool >/dev/null 2>&1; then
+        tmp="$(mktemp -d)"
+        if wrestool -x --type=14 --name=IDI_ICON1 -o "$tmp" "$PDX_EXE" 2>/dev/null \
+           && icotool -x -o "$tmp" "$tmp"/*.ico 2>/dev/null; then
+            best="$(ls -S "$tmp"/*.png 2>/dev/null | head -n 1)"
+            if [ -n "$best" ]; then
+                cp "$best" "$data_dir/icon.png" && icon="$data_dir/icon.png"
+            fi
+        fi
+        rm -rf "$tmp"
+    else
+        warn "icoutils not installed - generic icon (sudo apt install icoutils)"
+    fi
+    cat > "$app_dir/pdx-controller-wine.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=PDX Controller
+Comment=TC Electronic PDX3000 controller (Wine)
+Exec="$self" --run
+Icon=$icon
+Terminal=false
+Categories=AudioVideo;Audio;
+EOF
+    command -v update-desktop-database >/dev/null 2>&1 \
+        && update-desktop-database "$app_dir" >/dev/null 2>&1 || true
+    ok "menu entry: $app_dir/pdx-controller-wine.desktop"
+}
+
 ensure_prefix() {
     if [ -d "$PREFIX_DIR/drive_c" ]; then
         return 0
     fi
     log "Creating prefix at $PREFIX_DIR (first run, 2-3 min)..."
+    # app is a native PE32 binary: never prompt to install Wine Mono/Gecko
+    local -x WINEDLLOVERRIDES="mscoree,mshtml="
     # A wine prefix with corefonts is ~1 GB. Refuse early rather than fail
     # halfway through, when winetricks starts and the disk is full.
     local free_mb
@@ -238,6 +275,7 @@ install_pdx() {
         done
     fi
     ok "PDX Controller installed at: $PDX_EXE"
+    install_desktop_entry
 
     if [ "$from_cache" = "1" ] && [ -f "$src" ]; then
         if [ "${NO_CONFIRM:-0}" = "1" ] || [ ! -t 0 ]; then
