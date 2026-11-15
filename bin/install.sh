@@ -491,12 +491,17 @@ case "$MODE" in
         ok "launcher: $BIN_DIR/pdx-controller-wine"
         ok "fetch:    $LIB_DIR/fetch-pdx.sh"
         ok "runtime:  $PER_USER_RUNTIME (unchanged)"
-        # PATH hint
-        case ":$PATH:" in
-            *":$BIN_DIR:"*) ok "$BIN_DIR is already in PATH" ;;
-            *) warn "$BIN_DIR is not in PATH — add it with:"
-               printf '         export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
-        esac
+        # Ensure BIN_DIR is in PATH via ~/.profile (idempotent).
+        PROFILE="$HOME/.profile"
+        PATH_LINE="export PATH=\"\$HOME/.local/bin:\$PATH\""
+        if echo ":$PATH:" | grep -q ":$BIN_DIR:"; then
+            ok "$BIN_DIR is already in PATH"
+        elif [ -f "$PROFILE" ] && grep -qF '.local/bin' "$PROFILE"; then
+            ok "$BIN_DIR is in $PROFILE (restart shell to pick it up)"
+        else
+            printf '\n# Added by pdx-controller-wine installer\n%s\n' "$PATH_LINE" >> "$PROFILE"
+            ok "added $BIN_DIR to $PROFILE (restart shell or: source $PROFILE)"
+        fi
         ;;
     system)
         log "System install (sudo will be requested)"
